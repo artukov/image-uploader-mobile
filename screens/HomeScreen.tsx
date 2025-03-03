@@ -1,9 +1,11 @@
-// screens/HomeScreen.tsx
 import React, { useState, useEffect } from 'react';
-import { View, Text, Button, StyleSheet } from 'react-native';
+import { View, StyleSheet, Alert } from 'react-native';
+import * as Location from 'expo-location';
 import * as Network from 'expo-network';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import UploadStatusHeader from '../components/UploadStatusHeader';
+import CameraScreen from './CameraScreen';
 
 interface QueuedImage {
   uri: string;
@@ -16,52 +18,82 @@ interface QueuedImage {
 
 const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [uploading, setUploading] = useState(false);
-  const [queueCount, setQueueCount] = useState(0);
+  const [uploadedCount, setUploadedCount] = useState(0);
+  const [queue, setQueue] = useState<QueuedImage[]>([]);
 
+  // Load the queue from AsyncStorage on mount
   useEffect(() => {
-    const checkNetworkAndProcess = async () => {
-      const networkState = await Network.getNetworkStateAsync();
-      if (networkState.isConnected) {
-        processQueue();
-      }
-      loadQueueCount();
-    };
-    checkNetworkAndProcess();
+    loadQueue();
   }, []);
 
-  const loadQueueCount = async () => {
-    try {
-      const queue = await AsyncStorage.getItem('uploadQueue');
-      const parsedQueue: QueuedImage[] = queue ? JSON.parse(queue) : [];
-      setQueueCount(parsedQueue.length);
-    } catch (error) {
-      console.log(error);
-    }
-  };
-
-  const processQueue = async () => {
+  // Helper to load queue from AsyncStorage
+  const loadQueue = async () => {
     try {
       const queueString = await AsyncStorage.getItem('uploadQueue');
       const parsedQueue: QueuedImage[] = queueString ? JSON.parse(queueString) : [];
-      if (parsedQueue.length > 0) {
-        setUploading(true);
-        const updatedQueue: QueuedImage[] = [];
-        for (const item of parsedQueue) {
-          const success = await uploadImage(item);
-          if (!success && item.attempts < 5) {
-            updatedQueue.push({ ...item, attempts: item.attempts + 1 });
-          }
-        }
-        await AsyncStorage.setItem('uploadQueue', JSON.stringify(updatedQueue));
-        setQueueCount(updatedQueue.length);
-        setUploading(false);
-      }
+      setQueue(parsedQueue);
     } catch (error) {
-      console.log(error);
-      setUploading(false);
+      console.log('Queue load error:', error);
     }
   };
 
+  // The total images = already uploaded + those still in queue
+  const totalCount = uploadedCount + queue.length;
+
+  // Called when user captures an image
+  const handleCapture = async (photo: { uri: string; base64: string }) => {
+    try {
+      // 1. Ask for location permission
+      const { status: locStatus } = await Location.requestForegroundPermissionsAsync();
+      if (locStatus !== 'granted') {
+        Alert.alert('Location Permission Required', 'Cannot proceed without location.');
+        return;
+      }
+
+      // 2. Get current location
+      const locationResult = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+        maximumAge: 10000,
+        timeout: 15000,
+      });
+      const { latitude, longitude } = locationResult.coords;
+
+      // 3. Build the image data object
+      const imageData: QueuedImage = {
+        uri: photo.uri,
+        base64: photo.base64 || '',
+        latitude,
+        longitude,
+        timestamp: new Date().toISOString(),
+        attempts: 0,
+      };
+
+      // 4. Check network connectivity
+      const networkState = await Network.getNetworkStateAsync();
+      if (networkState.isConnected) {
+        // Try uploading immediately
+        setUploading(true);
+        const success = await uploadImage(imageData);
+        setUploading(false);
+
+        if (success) {
+          // If upload succeeded, increment the uploaded count
+          setUploadedCount((prev) => prev + 1);
+          return; // We’re done with this image
+        }
+      }
+
+      // If not connected OR upload fails, save to queue
+      await saveToQueue(imageData);
+      // Reload queue to update the local state
+      loadQueue();
+    } catch (error) {
+      console.log('Capture error:', error);
+      Alert.alert('Error', 'An error occurred while capturing the image.');
+    }
+  };
+
+  // Actually upload the image to your backend
   const uploadImage = async (imageData: QueuedImage): Promise<boolean> => {
     try {
       const formData = new FormData();
@@ -73,46 +105,60 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       formData.append('latitude', imageData.latitude.toString());
       formData.append('longitude', imageData.longitude.toString());
       formData.append('timestamp', imageData.timestamp);
-      // Replace with your Nest.js backend URL
+
       const response = await fetch('http://localhost:3000/upload', {
         method: 'POST',
         body: formData,
         headers: { 'Content-Type': 'multipart/form-data' },
       });
+
       if (!response.ok) {
         console.log('Upload failed:', await response.text());
         return false;
       }
+
       const result = await response.json();
       console.log('Upload result:', result);
       return true;
-    } catch (error) {
-      console.log('Upload error:', error);
+    } catch (err) {
+      console.log('Upload error:', err);
       return false;
+    }
+  };
+
+  // Save the image to AsyncStorage queue
+  const saveToQueue = async (imageData: QueuedImage) => {
+    try {
+      const queueString = await AsyncStorage.getItem('uploadQueue');
+      const parsedQueue: QueuedImage[] = queueString ? JSON.parse(queueString) : [];
+      parsedQueue.push(imageData);
+      await AsyncStorage.setItem('uploadQueue', JSON.stringify(parsedQueue));
+    } catch (error) {
+      console.log('Queue save error:', error);
     }
   };
 
   return (
     <View style={styles.container}>
-      <UploadStatusHeader uploading={uploading} queueCount={queueCount} />
-      <View style={styles.preview}>
-        <Text>Camera preview goes here</Text>
-      </View>
-      <Button title="Take Picture" onPress={() => navigation.navigate('Camera')} />
+      {/* 
+        Header:
+          - uploading? -> "Uploading..." or "Not Uploading"
+          - uploadedCount/totalCount -> e.g. "10/12 images"
+      */}
+      <UploadStatusHeader
+        uploading={uploading}
+        uploadedCount={uploadedCount}
+        totalCount={totalCount}
+      />
+
+      {/* Camera Screen for capturing images */}
+      <CameraScreen onCapture={handleCapture} />
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
-  preview: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#ccc',
-    marginVertical: 16,
-  },
-});
-
 export default HomeScreen;
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+});

@@ -13,8 +13,7 @@ const App = () => {
     <PermissionHandler>
       <NavigationContainer>
         <Stack.Navigator initialRouteName="Home">
-          <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'Home' }} />
-          <Stack.Screen name="Camera" component={CameraScreen} options={{ title: 'Camera' }} />
+          <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
         </Stack.Navigator>
       </NavigationContainer>
     </PermissionHandler>
