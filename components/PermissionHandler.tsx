@@ -1,5 +1,5 @@
 // components/PermissionHandler.tsx
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Alert, Linking, View, Text, StyleSheet } from 'react-native';
 import { useCameraPermissions } from 'expo-camera';
 import { useForegroundPermissions } from 'expo-location';
@@ -12,6 +12,7 @@ interface PermissionHandlerProps {
 const PermissionHandler: React.FC<PermissionHandlerProps> = ({ children }) => {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [locationPermission, requestLocationPermission] = useForegroundPermissions();
+  const [isCheckingPermissions, setIsCheckingPermissions] = useState(true);
 
   useEffect(() => {
     (async () => {
@@ -23,11 +24,12 @@ const PermissionHandler: React.FC<PermissionHandlerProps> = ({ children }) => {
       if (!locationPermission || locationPermission.status === 'undetermined') {
         await requestLocationPermission();
       }
+      setIsCheckingPermissions(false);
     })();
-  }, []);
+  }, [cameraPermission, locationPermission]);
 
-  // While permissions are still undefined, wait without showing alert.
-  if (!cameraPermission || !locationPermission) {
+  // While permissions are still being checked, wait without showing alert.
+  if (isCheckingPermissions) {
     return (
       <View style={styles.center}>
         <Text>Checking permissions...</Text>
@@ -37,8 +39,8 @@ const PermissionHandler: React.FC<PermissionHandlerProps> = ({ children }) => {
 
   // If permissions are defined but not granted, show an alert.
   if (
-    cameraPermission.status !== 'granted' ||
-    locationPermission.status !== 'granted'
+    cameraPermission?.status !== 'granted' ||
+    locationPermission?.status !== 'granted'
   ) {
     Alert.alert(
       'Permissions Required',
