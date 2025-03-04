@@ -3,9 +3,10 @@ import { View, StyleSheet, Alert } from 'react-native';
 import * as Location from 'expo-location';
 import * as Network from 'expo-network';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
+import styles from '../styles/HomeScreenStyles'
 import UploadStatusHeader from '../components/UploadStatusHeader';
 import CameraScreen from './CameraScreen';
+import { CameraCapturedPicture } from 'expo-camera';
 
 interface QueuedImage {
   uri: string;
@@ -41,7 +42,7 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const totalCount = uploadedCount + queue.length;
 
   // Called when user captures an image
-  const handleCapture = async (photo: { uri: string; base64: string }) => {
+  const handleCapture = async (photo:  CameraCapturedPicture | undefined ) => {
     try {
       // 1. Ask for location permission
       const { status: locStatus } = await Location.requestForegroundPermissionsAsync();
@@ -53,11 +54,12 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       // 2. Get current location
       const locationResult = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
-        maximumAge: 10000,
-        timeout: 15000,
       });
       const { latitude, longitude } = locationResult.coords;
 
+      if (!photo) {
+        return;
+      }
       // 3. Build the image data object
       const imageData: QueuedImage = {
         uri: photo.uri,
@@ -158,7 +160,3 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 };
 
 export default HomeScreen;
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-});
