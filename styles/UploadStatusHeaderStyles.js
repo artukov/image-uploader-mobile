@@ -7,7 +7,7 @@ export default StyleSheet.create({
   header: {
     height: 44,
     flexDirection: 'row',
-    justifyContent: 'space-between', // important for left/right alignment
+    justifyContent: 'space-between',
     alignItems: 'center',
   },
   text: {

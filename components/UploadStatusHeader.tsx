@@ -4,13 +4,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import styles from '../styles/UploadStatusHeaderStyles';
 
 interface UploadStatusHeaderProps {
-  uploading: boolean;
-  uploadedCount: number;
-  totalCaptured: number;
+  uploadedCount: number;   // Number of images successfully uploaded
+  totalCaptured: number;   // Total images captured (whether uploaded or pending)
 }
 
 const UploadStatusHeader: React.FC<UploadStatusHeaderProps> = ({
-  uploading,
   uploadedCount,
   totalCaptured,
 }) => {
@@ -19,7 +17,8 @@ const UploadStatusHeader: React.FC<UploadStatusHeaderProps> = ({
   const textColor = colorScheme === 'dark' ? '#fff' : '#000';
   const insets = useSafeAreaInsets();
 
-  const leftText = uploading ? 'Uploading...' : 'Not Uploading';
+  // If not all captured images are uploaded, then we’re still waiting for uploads.
+  const leftText = uploadedCount < totalCaptured ? 'Uploading...' : 'Not Uploading';
   const rightText = `${uploadedCount}/${totalCaptured} images`;
 
   return (
