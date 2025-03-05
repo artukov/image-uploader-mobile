@@ -9,13 +9,71 @@ export interface QueuedImage {
   longitude: number;
   timestamp: string;
   attempts: number;
+  uploaded: boolean; // Add a flag to track uploaded status
+  id: string; // Unique ID for duplicate detection
 }
 
 export const MAX_ATTEMPTS = 5;
+export const UPLOAD_QUEUE_KEY = 'uploadQueue';
+export const UPLOAD_STATS_KEY = 'uploadStats';
+
+// Stats to maintain accurate counts across app sessions
+export interface UploadStats {
+  totalCaptured: number;
+  totalUploaded: number;
+}
+
+export const getUploadStats = async (): Promise<UploadStats> => {
+  try {
+    const statsString = await AsyncStorage.getItem(UPLOAD_STATS_KEY);
+    if (!statsString) {
+      // Initialize with zeros if no stats exist
+      const initialStats = { totalCaptured: 0, totalUploaded: 0 };
+      await AsyncStorage.setItem(UPLOAD_STATS_KEY, JSON.stringify(initialStats));
+      return initialStats;
+    }
+    return JSON.parse(statsString);
+  } catch (error) {
+    console.log('Stats load error:', error);
+    return { totalCaptured: 0, totalUploaded: 0 };
+  }
+};
+
+export const updateUploadStats = async (
+  stats: Partial<UploadStats>
+): Promise<UploadStats> => {
+  try {
+    const currentStats = await getUploadStats();
+    const newStats = {
+      totalCaptured: stats.totalCaptured !== undefined 
+        ? stats.totalCaptured 
+        : currentStats.totalCaptured,
+      totalUploaded: stats.totalUploaded !== undefined 
+        ? stats.totalUploaded 
+        : currentStats.totalUploaded,
+    };
+    
+    await AsyncStorage.setItem(UPLOAD_STATS_KEY, JSON.stringify(newStats));
+    return newStats;
+  } catch (error) {
+    console.log('Stats update error:', error);
+    return await getUploadStats();
+  }
+};
+
+export const incrementCaptured = async (): Promise<UploadStats> => {
+  const stats = await getUploadStats();
+  return updateUploadStats({ totalCaptured: stats.totalCaptured + 1 });
+};
+
+export const incrementUploaded = async (): Promise<UploadStats> => {
+  const stats = await getUploadStats();
+  return updateUploadStats({ totalUploaded: stats.totalUploaded + 1 });
+};
 
 export const loadQueue = async (): Promise<QueuedImage[]> => {
   try {
-    const queueString = await AsyncStorage.getItem('uploadQueue');
+    const queueString = await AsyncStorage.getItem(UPLOAD_QUEUE_KEY);
     return queueString ? JSON.parse(queueString) : [];
   } catch (error) {
     console.log('Queue load error:', error);
@@ -25,19 +83,28 @@ export const loadQueue = async (): Promise<QueuedImage[]> => {
 
 export const updateQueueStorage = async (newQueue: QueuedImage[]): Promise<void> => {
   try {
-    await AsyncStorage.setItem('uploadQueue', JSON.stringify(newQueue));
+    await AsyncStorage.setItem(UPLOAD_QUEUE_KEY, JSON.stringify(newQueue));
   } catch (error) {
     console.log('Queue update error:', error);
   }
 };
 
-export const saveToQueue = async (imageData: QueuedImage): Promise<void> => {
+export const saveToQueue = async (imageData: Omit<QueuedImage, 'id'>): Promise<void> => {
   try {
     const queue = await loadQueue();
-    // Reset attempts for a fresh processing run
-    imageData.attempts = 0;
-    queue.push(imageData);
-    await AsyncStorage.setItem('uploadQueue', JSON.stringify(queue));
+    
+    // Generate a unique ID for this image
+    const uniqueId = `img_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    
+    const newImageData: QueuedImage = {
+      ...imageData,
+      attempts: 0,
+      uploaded: false,
+      id: uniqueId
+    };
+    
+    queue.push(newImageData);
+    await AsyncStorage.setItem(UPLOAD_QUEUE_KEY, JSON.stringify(queue));
     console.log('Image queued. New queue:', queue);
   } catch (error) {
     console.log('Queue save error:', error);
@@ -55,6 +122,7 @@ export const uploadImage = async (imageData: QueuedImage): Promise<boolean> => {
     formData.append('latitude', imageData.latitude.toString());
     formData.append('longitude', imageData.longitude.toString());
     formData.append('timestamp', imageData.timestamp);
+    formData.append('id', imageData.id); // Add the unique ID to detect duplicates
 
     // Use your correct backend URL
     const response = await fetch('http://192.168.0.30:3000/upload', {
@@ -62,12 +130,21 @@ export const uploadImage = async (imageData: QueuedImage): Promise<boolean> => {
       body: formData,
       headers: { 'Content-Type': 'multipart/form-data' },
     });
+    
     if (!response.ok) {
       console.log('Upload failed:', await response.text());
       return false;
     }
+    
     const result = await response.json();
     console.log('Upload result:', result);
+    
+    // Check if this was a duplicate (already uploaded)
+    if (result.duplicate) {
+      console.log('Image was already uploaded (duplicate detected)');
+    }
+    
+    // Even if it's a duplicate, we count it as a success
     return true;
   } catch (err) {
     console.log('Upload error:', err);
@@ -97,19 +174,45 @@ export const processQueue = async (): Promise<number> => {
 
   let successCount = 0;
   const remainingQueue: QueuedImage[] = [];
+  
   for (const item of currentQueue) {
+    // Skip already uploaded items
+    if (item.uploaded) {
+      remainingQueue.push(item);
+      continue;
+    }
+    
     const { success, attempts } = await attemptUpload(item, MAX_ATTEMPTS);
-    // Reset attempts for the next processing run.
-    item.attempts = 0;
+    
     if (success) {
+      // Mark as uploaded but keep in queue for state tracking
+      item.uploaded = true;
+      item.attempts += attempts;
+      remainingQueue.push(item);
       successCount++;
       console.log('Queued image uploaded successfully:', item.uri);
+      
+      // Update the stats to increment uploaded count
+      await incrementUploaded();
     } else {
+      // Keep track of total attempts across processing runs
+      item.attempts += attempts;
       remainingQueue.push(item);
       console.log('Image remains queued after', attempts, 'attempts:', item.uri);
     }
   }
-  await updateQueueStorage(remainingQueue);
+  
+  // Cleanup - remove uploaded images older than 1 hour to prevent queue growth
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  const cleanedQueue = remainingQueue.filter(item => {
+    if (item.uploaded) {
+      const itemDate = new Date(item.timestamp);
+      return itemDate > oneHourAgo;
+    }
+    return true;
+  });
+  
+  await updateQueueStorage(cleanedQueue);
   return successCount;
 };
 
@@ -117,8 +220,12 @@ export const processQueue = async (): Promise<number> => {
 export const checkAndProcessQueue = async (): Promise<number> => {
   const networkState = await Network.getNetworkStateAsync();
   const currentQueue = await loadQueue();
-  console.log('checkAndProcessQueue fired. isConnected:', networkState.isConnected, 'Queue length:', currentQueue.length);
-  if (networkState.isConnected && currentQueue.length > 0) {
+  const pendingUploads = currentQueue.filter(item => !item.uploaded).length;
+  
+  console.log('checkAndProcessQueue fired. isConnected:', networkState.isConnected, 
+    'Queue length:', currentQueue.length, 'Pending uploads:', pendingUploads);
+    
+  if (networkState.isConnected && pendingUploads > 0) {
     const successCount = await processQueue();
     return successCount;
   }

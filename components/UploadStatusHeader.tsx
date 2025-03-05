@@ -1,31 +1,50 @@
 import React from 'react';
-import { View, Text, useColorScheme } from 'react-native';
+import { View, Text, useColorScheme, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import styles from '../styles/UploadStatusHeaderStyles';
 
 interface UploadStatusHeaderProps {
-  uploadedCount: number;   // Number of images successfully uploaded
-  totalCaptured: number;   // Total images captured (whether uploaded or pending)
+  uploading: boolean;       // Whether uploads are in progress or pending
+  uploadedCount: number;    // Number of images successfully uploaded
+  totalCaptured: number;    // Total images captured (whether uploaded or pending)
+  queueLength?: number;     // Number of images in queue (optional)
 }
 
 const UploadStatusHeader: React.FC<UploadStatusHeaderProps> = ({
+  uploading,
   uploadedCount,
   totalCaptured,
+  queueLength = 0,
 }) => {
   const colorScheme = useColorScheme();
   const backgroundColor = colorScheme === 'dark' ? '#000' : '#fff';
   const textColor = colorScheme === 'dark' ? '#fff' : '#000';
   const insets = useSafeAreaInsets();
 
-  // If not all captured images are uploaded, then we’re still waiting for uploads.
-  const leftText = uploadedCount < totalCaptured ? 'Uploading...' : 'Not Uploading';
-  const rightText = `${uploadedCount}/${totalCaptured} images`;
+  // Show more detailed status based on queue length and upload state
+  let statusText = 'Ready';
+  if (uploading) {
+    if (queueLength > 0) {
+      statusText = `Uploading ${queueLength} image${queueLength !== 1 ? 's' : ''}...`;
+    } else {
+      statusText = 'Uploading...';
+    }
+  } else if (totalCaptured > 0 && uploadedCount < totalCaptured) {
+    statusText = 'Waiting for connection...';
+  }
+  
+  // Format upload statistics - prevent nonsensical initial values
+  const sanitizedUploaded = Math.min(uploadedCount, totalCaptured);
+  const statsText = `${sanitizedUploaded}/${totalCaptured} images`;
 
   return (
     <View style={[{ backgroundColor, paddingTop: insets.top }, styles.headerContainer]}>
       <View style={styles.header}>
-        <Text style={[styles.text, { color: textColor }]}>{leftText}</Text>
-        <Text style={[styles.text, { color: textColor }]}>{rightText}</Text>
+        <View style={styles.statusContainer}>
+          {uploading && <ActivityIndicator size="small" color={textColor} style={styles.spinner} />}
+          <Text style={[styles.text, { color: textColor }]}>{statusText}</Text>
+        </View>
+        <Text style={[styles.text, { color: textColor }]}>{statsText}</Text>
       </View>
     </View>
   );

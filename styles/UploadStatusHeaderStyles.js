@@ -13,4 +13,11 @@ export default StyleSheet.create({
   text: {
     fontSize: 16,
   },
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  spinner: {
+    marginRight: 8,
+  }
 });
