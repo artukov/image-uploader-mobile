@@ -9,7 +9,7 @@ export interface QueuedImage {
   longitude: number;
   timestamp: string;
   attempts: number;
-  uploaded: boolean; // Add a flag to track uploaded status
+  uploaded: boolean;
   id: string; // Unique ID for duplicate detection
 }
 
@@ -89,7 +89,7 @@ export const updateQueueStorage = async (newQueue: QueuedImage[]): Promise<void>
   }
 };
 
-export const saveToQueue = async (imageData: Omit<QueuedImage, 'id'>): Promise<void> => {
+export const saveToQueue = async (imageData: Omit<QueuedImage, 'id'>): Promise<QueuedImage> => {
   try {
     const queue = await loadQueue();
     
@@ -106,8 +106,11 @@ export const saveToQueue = async (imageData: Omit<QueuedImage, 'id'>): Promise<v
     queue.push(newImageData);
     await AsyncStorage.setItem(UPLOAD_QUEUE_KEY, JSON.stringify(queue));
     console.log('Image queued. New queue:', queue);
+    
+    return newImageData;
   } catch (error) {
     console.log('Queue save error:', error);
+    throw error;
   }
 };
 
@@ -123,6 +126,9 @@ export const uploadImage = async (imageData: QueuedImage): Promise<boolean> => {
     formData.append('longitude', imageData.longitude.toString());
     formData.append('timestamp', imageData.timestamp);
     formData.append('id', imageData.id); // Add the unique ID to detect duplicates
+    formData.append('retryCount', imageData.attempts.toString()); // Add retry count for tracking
+    
+    console.log(`Attempting upload for image ${imageData.id}, attempt #${imageData.attempts + 1}`);
 
     // Use your correct backend URL
     const response = await fetch('http://192.168.0.30:3000/upload', {
@@ -159,10 +165,22 @@ export const attemptUpload = async (
 ): Promise<{ success: boolean; attempts: number }> => {
   let attempts = 0;
   let success = false;
+  
+  // Reset attempts counter for this processing run
+  const originalAttempts = imageData.attempts;
+  imageData.attempts = 0;
+  
   while (attempts < maxAttempts && !success) {
+    imageData.attempts++; // Increment attempts for this run
     success = await uploadImage(imageData);
     attempts++;
   }
+  
+  // If failed, restore original attempts count plus what we just tried
+  if (!success) {
+    imageData.attempts = originalAttempts + attempts;
+  }
+  
   return { success, attempts };
 };
 
@@ -182,23 +200,23 @@ export const processQueue = async (): Promise<number> => {
       continue;
     }
     
+    // For each queue processing run, we try up to MAX_ATTEMPTS times
+    // regardless of how many times it was tried before
     const { success, attempts } = await attemptUpload(item, MAX_ATTEMPTS);
     
     if (success) {
       // Mark as uploaded but keep in queue for state tracking
       item.uploaded = true;
-      item.attempts += attempts;
       remainingQueue.push(item);
       successCount++;
-      console.log('Queued image uploaded successfully:', item.uri);
+      console.log(`Queued image uploaded successfully: ${item.id} after ${attempts} attempts in this run`);
       
       // Update the stats to increment uploaded count
       await incrementUploaded();
     } else {
-      // Keep track of total attempts across processing runs
-      item.attempts += attempts;
+      // Keep in queue for future attempts - it will get another MAX_ATTEMPTS next time
       remainingQueue.push(item);
-      console.log('Image remains queued after', attempts, 'attempts:', item.uri);
+      console.log(`Image remains queued after ${attempts} attempts in this run: ${item.id}, total lifetime attempts: ${item.attempts}`);
     }
   }
   

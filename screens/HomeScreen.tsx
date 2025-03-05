@@ -78,7 +78,7 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       }
     });
     
-    // Process queue on startup
+    // Process queue on startup - this handles the case when app is terminated and relaunched with internet
     setIsProcessingQueue(true);
     checkAndProcessQueue().then(() => {
       updateCountsFromStorage();
@@ -182,20 +182,19 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       };
 
       const networkState = await Network.getNetworkStateAsync();
+      
+      // First save to queue to generate a unique ID - always do this to ensure it's queued
+      const newItem = await saveToQueue(imageData);
+      
       if (networkState.isConnected) {
-        setUploading(true);
         let success = false;
-        
-        // First save to queue to generate a unique ID
-        await saveToQueue(imageData);
-        
-        // Get the queue to find our newly added item
-        const queue = await loadQueue();
-        const newItem = queue[queue.length - 1]; // Last item should be our newly added image
         
         // Attempt immediate upload with up to MAX_ATTEMPTS
         for (let i = 0; i < MAX_ATTEMPTS && !success; i++) {
           try {
+            // Update attempt count
+            newItem.attempts = i;
+            
             const formData = new FormData();
             formData.append('image', {
               uri: newItem.uri,
@@ -206,6 +205,7 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             formData.append('longitude', newItem.longitude.toString());
             formData.append('timestamp', newItem.timestamp);
             formData.append('id', newItem.id); // Add the unique ID for duplicate detection
+            formData.append('retryCount', newItem.attempts.toString()); // Send retry count to server
             
             const response = await fetch('http://192.168.0.30:3000/upload', {
               method: 'POST',
@@ -240,6 +240,16 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           const updatedStats = await incrementUploaded();
           setUploadedCount(updatedStats.totalUploaded);
           console.log('Immediate upload succeeded');
+        } else {
+          // Update the queue item with current attempt count
+          const updatedQueue = await loadQueue();
+          const itemIndex = updatedQueue.findIndex(item => item.id === newItem.id);
+          
+          if (itemIndex >= 0) {
+            updatedQueue[itemIndex].attempts = MAX_ATTEMPTS;
+            await updateQueueStorage(updatedQueue);
+            console.log(`Upload failed after ${MAX_ATTEMPTS} attempts, keeping in queue for later retries`);
+          }
         }
       } else {
         // If offline, we've already added the image to the queue
