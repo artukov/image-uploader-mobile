@@ -1,4 +1,3 @@
-// components/PermissionHandler.tsx
 import React, { useEffect, useState } from 'react';
 import { Alert, Linking, View, Text, StyleSheet } from 'react-native';
 import { useCameraPermissions } from 'expo-camera';

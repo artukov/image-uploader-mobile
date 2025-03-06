@@ -1,4 +1,3 @@
-// helpers/queueProcessor.ts
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Network from 'expo-network';
 
@@ -130,7 +129,6 @@ export const uploadImage = async (imageData: QueuedImage): Promise<boolean> => {
     
     console.log(`Attempting upload for image ${imageData.id}, attempt #${imageData.attempts + 1}`);
 
-    // Use your correct backend URL
     const response = await fetch('http://192.168.0.30:3000/upload', {
       method: 'POST',
       body: formData,

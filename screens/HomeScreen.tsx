@@ -1,4 +1,3 @@
-// screens/HomeScreen.tsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Alert, AppState } from 'react-native';
 import * as Location from 'expo-location';
@@ -264,7 +263,6 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       console.log('Capture error:', error);
       Alert.alert('Error', 'An error occurred while processing the image.');
     } finally {
-      // Make sure uploading is set to false when we're done
       setUploading(false);
     }
   };

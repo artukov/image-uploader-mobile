@@ -1,4 +1,3 @@
-// helpers/backgroundUploadTask.ts
 import * as BackgroundFetch from 'expo-background-fetch';
 import * as TaskManager from 'expo-task-manager';
 import * as Network from 'expo-network';
@@ -42,7 +41,6 @@ export async function registerBackgroundUploadTaskAsync() {
     console.log('Error checking task registration:', error);
   }
   
-  // Now register the task
   return BackgroundFetch.registerTaskAsync(BACKGROUND_UPLOAD_TASK, {
     minimumInterval: 15, // Run every 15 seconds if possible
     stopOnTerminate: false, // Keep running after app is terminated

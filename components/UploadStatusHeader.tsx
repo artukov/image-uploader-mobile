@@ -21,7 +21,6 @@ const UploadStatusHeader: React.FC<UploadStatusHeaderProps> = ({
   const textColor = colorScheme === 'dark' ? '#fff' : '#000';
   const insets = useSafeAreaInsets();
 
-  // Show more detailed status based on queue length and upload state
   let statusText = 'Ready';
   if (uploading) {
     if (queueLength > 0) {
@@ -33,7 +32,6 @@ const UploadStatusHeader: React.FC<UploadStatusHeaderProps> = ({
     statusText = 'Waiting for connection...';
   }
   
-  // Format upload statistics - prevent nonsensical initial values
   const sanitizedUploaded = Math.min(uploadedCount, totalCaptured);
   const statsText = `${sanitizedUploaded}/${totalCaptured} images`;
 

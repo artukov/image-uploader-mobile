@@ -8,7 +8,6 @@ import {
 } from 'react-native';
 import { CameraView, CameraType, useCameraPermissions, CameraCapturedPicture } from 'expo-camera';
 import styles from '../styles/CameraScreenStyles'
-// Import Ionicons
 import { Ionicons } from '@expo/vector-icons';
 
 interface CameraScreenProps {

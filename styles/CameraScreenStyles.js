@@ -28,16 +28,15 @@ export default StyleSheet.create({
     captureButtonContainer: {
       position: 'absolute',
       bottom: 32,
-      right: 32,          // Put it on the right side
+      right: 32,     
     },
     captureButton: {
       width: 72,
       height: 72,
       borderRadius: 36,
-      backgroundColor: '#8C1E2F',  // Maroon-ish color
+      backgroundColor: '#8C1E2F',
       justifyContent: 'center',
       alignItems: 'center',
-      // Optional border to mimic a ring
       borderWidth: 4,
       borderColor: 'rgba(255,255,255,0.7)',
     },
